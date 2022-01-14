@@ -1,0 +1,13 @@
+/Debug/
+.metadata
+.mxproject
+RemoteSystemsTempFiles
+*.launch
+*.cfg
+.vscode
+!/vscode_tools/**/*.cfg
+build
+docs/test
+.settings/*.xml
+.settings/*.prefs
+*.pyc
