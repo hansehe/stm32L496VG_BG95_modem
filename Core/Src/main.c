@@ -151,7 +151,7 @@ int main(void)
   uint8_t receive_buffer[receive_buffer_length];
 
   char* bg95_uart_echo_cmd = "ATE1\r\0";
-  char* bg95_imei_cmd = "AT+GSN\r\0";
+  char* bg95_imei_cmd = "AT+QGMR\r\0";
 
   if (system_bg_module_is_powered_on)
   {
