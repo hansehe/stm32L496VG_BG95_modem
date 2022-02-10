@@ -38,10 +38,10 @@ static bool system_bg_module_power_on(void)
 	// When BG96 is in power off mode, it can be turned on to normal mode by driving the PWRKEY
 	// pin to a low level for at least 500ms.
 
-	if (system_bg_module_is_powered_on())
-	{
-		return true;
-	}
+//	if (system_bg_module_is_powered_on())
+//	{
+//		return true;
+//	}
 
 	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_RESET);
@@ -51,9 +51,20 @@ static bool system_bg_module_power_on(void)
 	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
 
-	HAL_Delay(2000);
+	HAL_Delay(50);
 
-	return system_bg_module_is_powered_on();
+	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_RESET);
+
+	HAL_Delay(750);
+
+	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
+
+	HAL_Delay(2100);
+
+	bool status = system_bg_module_is_powered_on();
+	return status;
 }
 
 static bool system_bg_module_power_off(void)
@@ -152,12 +163,15 @@ int main(void)
 
   char* bg95_uart_echo_cmd = "ATE1\r\0";
   char* bg95_imei_cmd = "AT+QGMR\r\0";
+  uint8_t* test_arr = {0xaa, 0xaa, 0xaa, 0xaa};
 
-  if (system_bg_module_is_powered_on)
-  {
-	  while (!system_bg_module_power_off());
-  }
-  while (!system_bg_module_power_on());
+//  if (system_bg_module_is_powered_on)
+//  {
+//	  while (!system_bg_module_power_off());
+//  }
+//  while (!system_bg_module_power_on());
+  system_bg_module_power_on();
+  HAL_Delay(1000);
 
   HAL_StatusTypeDef status = HAL_OK;
   uint16_t bytes_read = 0;
@@ -176,6 +190,7 @@ int main(void)
 	memset(receive_buffer, '\0', receive_buffer_length);
 	cmd_length = strlen(bg95_imei_cmd);
 	status = HAL_UART_Transmit(&huart1, bg95_imei_cmd, cmd_length, 1000);
+//	status = HAL_UART_Transmit(&huart1, test_arr, 1, 1000);
 	status = HAL_UART_Receive(&huart1, receive_buffer, receive_buffer_length, 1000);
 	bytes_read = receive_buffer_length - huart1.RxXferCount;
 	if (bytes_read > 0)
