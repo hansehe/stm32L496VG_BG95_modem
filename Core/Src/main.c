@@ -91,6 +91,12 @@ static bool system_bg_module_power_off(void)
     return !system_bg_module_is_powered_on();
 }
 
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  uint32_t errorCode = huart->ErrorCode;
+  uint32_t lol = errorCode;
+}
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -169,8 +175,8 @@ int main(void)
 //  {
 //	  while (!system_bg_module_power_off());
 //  }
-//  while (!system_bg_module_power_on());
-  system_bg_module_power_on();
+  while (!system_bg_module_power_on());
+//  system_bg_module_power_on();
   HAL_Delay(1000);
 
   HAL_StatusTypeDef status = HAL_OK;
@@ -181,18 +187,19 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	memset(receive_buffer, '\0', receive_buffer_length);
+  status = HAL_UART_Receive_IT(&huart1, receive_buffer, receive_buffer_length);
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-	memset(receive_buffer, '\0', receive_buffer_length);
 	cmd_length = strlen(bg95_imei_cmd);
 	status = HAL_UART_Transmit(&huart1, bg95_imei_cmd, cmd_length, 1000);
 //	status = HAL_UART_Transmit(&huart1, test_arr, 1, 1000);
-	status = HAL_UART_Receive(&huart1, receive_buffer, receive_buffer_length, 1000);
 	bytes_read = receive_buffer_length - huart1.RxXferCount;
+	HAL_Delay(1000);
 	if (bytes_read > 0)
 	{
 		for (uint16_t i = 0; i < bytes_read; i++)
