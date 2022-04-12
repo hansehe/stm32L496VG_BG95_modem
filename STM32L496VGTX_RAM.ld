@@ -7,7 +7,7 @@
 **
 ** @brief       : Linker script for STM32L496VGTx Device from STM32L4 series
 **                      1024Kbytes FLASH
-**                      256Kbytes RAM
+**                      320Kbytes RAM
 **                      64Kbytes RAM2
 **
 **                Set heap size, stack size and stack location according
@@ -23,13 +23,12 @@
 ******************************************************************************
 ** @attention
 **
-** <h2><center>&copy; Copyright (c) 2022 STMicroelectronics.
-** All rights reserved.</center></h2>
+** Copyright (c) 2022 STMicroelectronics.
+** All rights reserved.
 **
-** This software component is licensed by ST under BSD 3-Clause license,
-** the "License"; You may not use this file except in compliance with the
-** License. You may obtain a copy of the License at:
-**                        opensource.org/licenses/BSD-3-Clause
+** This software is licensed under terms that can be found in the LICENSE file
+** in the root directory of this software component.
+** If no LICENSE file comes with this software, it is provided AS-IS.
 **
 ******************************************************************************
 */
@@ -46,7 +45,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Memories definition */
 MEMORY
 {
-  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 256K
+  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 320K
   RAM2    (xrw)    : ORIGIN = 0x10000000,   LENGTH = 64K
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 1024K
 }

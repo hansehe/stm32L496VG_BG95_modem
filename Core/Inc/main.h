@@ -68,6 +68,8 @@ void Error_Handler(void);
 #define BG95_AP_READY_GPIO_Port GPIOC
 #define BG95_PON_TRIG_Pin GPIO_PIN_3
 #define BG95_PON_TRIG_GPIO_Port GPIOC
+#define DEBUG_OUT_Pin GPIO_PIN_3
+#define DEBUG_OUT_GPIO_Port GPIOA
 #define BG95_DTR_Pin GPIO_PIN_8
 #define BG95_DTR_GPIO_Port GPIOC
 #define BG95_PWRKEY_Pin GPIO_PIN_9

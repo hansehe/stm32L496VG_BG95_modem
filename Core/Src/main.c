@@ -63,10 +63,16 @@ static bool system_bg_module_power_on(void)
 
 	HAL_Delay(2100);
 
-	bool status = system_bg_module_is_powered_on();
-	return status;
+	//bool status = system_bg_module_is_powered_on();
+	//return status;
 }
 
+void bg_reset(){
+
+  HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
+  HAL_Delay(300);
+  HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
+}
 static bool system_bg_module_power_off(void)
 {
 	// Device power down routine (excerpt from BG documentation):
@@ -95,6 +101,17 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
   uint32_t errorCode = huart->ErrorCode;
   uint32_t lol = errorCode;
+  debug_write("Err\r\n", 5);
+  while(1){
+    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
+  }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
+  debug_write("Rx\r\n", 4);
 }
 
 /* USER CODE END Includes */
@@ -114,6 +131,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart5;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
@@ -124,13 +142,16 @@ UART_HandleTypeDef huart1;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void debug_write(char *data, size_t count){
+  HAL_StatusTypeDef status = HAL_UART_Transmit(&huart5, data, count, 10000);
+}
 /* USER CODE END 0 */
 
 /**
@@ -162,6 +183,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART1_UART_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 
   uint16_t receive_buffer_length = 1024;
@@ -175,9 +197,22 @@ int main(void)
 //  {
 //	  while (!system_bg_module_power_off());
 //  }
-  while (!system_bg_module_power_on());
-//  system_bg_module_power_on();
-  HAL_Delay(1000);
+  //system_bg_module_power_on();
+  bg_reset();
+  //HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
+  //HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
+  //HAL_Delay(1000);
+  while(HAL_GPIO_ReadPin(BG95_STATUS_GPIO_Port, BG95_STATUS_Pin) == 0){
+    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
+  }
+
+  debug_write("Start\r\n", 7);
+  /*while(1){
+    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
+  }*/
+  //HAL_Delay(1000);
+
 
   HAL_StatusTypeDef status = HAL_OK;
   uint16_t bytes_read = 0;
@@ -188,25 +223,69 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	memset(receive_buffer, '\0', receive_buffer_length);
-  status = HAL_UART_Receive_IT(&huart1, receive_buffer, receive_buffer_length);
+  //status = HAL_UART_Receive_IT(&huart1, receive_buffer, receive_buffer_length);
+  //status = HAL_UART_Transmit(&huart1, bg95_uart_echo_cmd, strlen(bg95_uart_echo_cmd), 1000);
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-	cmd_length = strlen(bg95_imei_cmd);
-	status = HAL_UART_Transmit(&huart1, bg95_imei_cmd, cmd_length, 1000);
-//	status = HAL_UART_Transmit(&huart1, test_arr, 1, 1000);
-	bytes_read = receive_buffer_length - huart1.RxXferCount;
-	HAL_Delay(1000);
-	if (bytes_read > 0)
-	{
-		for (uint16_t i = 0; i < bytes_read; i++)
-		{
-			char lol = receive_buffer[i];
-		}
-	}
+    HAL_Delay(1000);
+
+    status = HAL_UART_Transmit(&huart1, "ATI\r", 4 , 100);
+    if(status != HAL_OK){
+      debug_write("Err Tx\r\n", 8);
+    }
+    int rx = 0;
+    char msg[80];
+    char recv[100];
+    while(1){
+      status = HAL_UART_Receive(&huart1, receive_buffer, 1, 100);
+      if(status == HAL_OK){
+        recv[rx] = receive_buffer[0];
+        rx++;
+      }
+      else if(status == HAL_TIMEOUT){
+        sprintf(msg, "RX: %d\r\n", rx);
+        debug_write(msg, strlen(msg));
+        debug_write("Timeout\r\n", 9);
+        debug_write(recv, rx);
+        break;
+      }
+      else{
+        debug_write("Err Rx\r\n", 8);
+        break;
+      }
+    }
+    status = HAL_UART_Transmit(&huart1, "ATI\r", 4 , 100);
+    if(status != HAL_OK){
+      debug_write("Err Tx\r\n", 8);
+    }
+    rx = 0;
+    while(1){
+      status = HAL_UART_Receive(&huart1, receive_buffer, 1, 100);
+      if(status == HAL_OK){
+        rx++;
+        debug_write(receive_buffer, 1);
+      }
+      else if(status == HAL_TIMEOUT){
+        sprintf(msg, "RX: %d\r\n", rx);
+        debug_write("Timeout\r\n", 9);
+        break;
+      }
+      else{
+        debug_write("Err Rx\r\n", 8);
+        break;
+      }
+    }
+    if(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_ORE)){
+        debug_write("Overrun\r\n", 9);
+        __HAL_UART_CLEAR_OREFLAG(&huart1);
+    }
+    else{
+      debug_write("No overrun\r\n", 12);
+    }
   }
   /* USER CODE END 3 */
 }
@@ -260,6 +339,41 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief UART5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART5_Init(void)
+{
+
+  /* USER CODE BEGIN UART5_Init 0 */
+
+  /* USER CODE END UART5_Init 0 */
+
+  /* USER CODE BEGIN UART5_Init 1 */
+
+  /* USER CODE END UART5_Init 1 */
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 115200;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart5.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart5.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART5_Init 2 */
+
+  /* USER CODE END UART5_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -280,7 +394,7 @@ static void MX_USART1_UART_Init(void)
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
   huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_RTS_CTS;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart1.Init.OverSampling = UART_OVERSAMPLING_16;
   huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
@@ -307,6 +421,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
@@ -314,6 +429,9 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, BG95_AP_READY_Pin|BG95_PON_TRIG_Pin|BG95_DTR_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
@@ -343,6 +461,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : DEBUG_OUT_Pin */
+  GPIO_InitStruct.Pin = DEBUG_OUT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(DEBUG_OUT_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LOCK_SWITCH_Pin USART_RI_Pin */
   GPIO_InitStruct.Pin = LOCK_SWITCH_Pin|USART_RI_Pin;
@@ -387,4 +512,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
