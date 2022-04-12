@@ -51,17 +51,7 @@ static bool system_bg_module_power_on(void)
 	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
 
-	HAL_Delay(50);
-
-	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_RESET);
-
-	HAL_Delay(750);
-
-	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
-
-	HAL_Delay(2100);
+	HAL_Delay(2000);
 
 	bool status = system_bg_module_is_powered_on();
 	return status;
@@ -198,8 +188,8 @@ int main(void)
 	cmd_length = strlen(bg95_imei_cmd);
 	status = HAL_UART_Transmit(&huart1, bg95_imei_cmd, cmd_length, 1000);
 //	status = HAL_UART_Transmit(&huart1, test_arr, 1, 1000);
-	bytes_read = receive_buffer_length - huart1.RxXferCount;
-	HAL_Delay(1000);
+//    status = HAL_UART_Receive(&huart1, receive_buffer, receive_buffer_length, 1000);
+//    bytes_read = receive_buffer_length - huart1.RxXferCount;
 	if (bytes_read > 0)
 	{
 		for (uint16_t i = 0; i < bytes_read; i++)
@@ -207,6 +197,7 @@ int main(void)
 			char lol = receive_buffer[i];
 		}
 	}
+	HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
