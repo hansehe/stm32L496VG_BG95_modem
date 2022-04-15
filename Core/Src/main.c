@@ -22,103 +22,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-
-static bool system_bg_module_is_powered_on(void)
-{
-    return HAL_GPIO_ReadPin(BG95_STATUS_GPIO_Port, BG95_STATUS_Pin) != 0;
-}
-
-static bool system_bg_module_power_on(void)
-{
-	// Device power up routine (excerpt from BG documentation):
-	// When BG96 is in power off mode, it can be turned on to normal mode by driving the PWRKEY
-	// pin to a low level for at least 500ms.
-
-//	if (system_bg_module_is_powered_on())
-//	{
-//		return true;
-//	}
-
-	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_RESET);
-
-	HAL_Delay(1000);
-
-	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
-
-	HAL_Delay(50);
-
-	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_RESET);
-
-	HAL_Delay(750);
-
-	HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
-
-	HAL_Delay(2100);
-
-	//bool status = system_bg_module_is_powered_on();
-	//return status;
-}
-
-void bg_reset(){
-
-  HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
-  HAL_Delay(300);
-  HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
-}
-static bool system_bg_module_power_off(void)
-{
-	// Device power down routine (excerpt from BG documentation):
-	// Driving the PWRKEY pin to a low level voltage for at least 650ms,
-	// the module will execute power-down procedure after the PWRKEY is released.
-
-	if (!system_bg_module_is_powered_on())
-	{
-		return true;
-	}
-
-    HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_RESET);
-
-    HAL_Delay(1000);
-
-    HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(BG95_PWRKEY_GPIO_Port, BG95_PWRKEY_Pin, GPIO_PIN_SET);
-
-    HAL_Delay(1000);
-
-    return !system_bg_module_is_powered_on();
-}
-
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-  uint32_t errorCode = huart->ErrorCode;
-  uint32_t lol = errorCode;
-  debug_write("Err\r\n", 5);
-  while(1){
-    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
-  }
-}
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
-  debug_write("Rx\r\n", 4);
-}
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#define RX_BUFFER_LEN 1024
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -133,15 +44,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart5;
 UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
-
+uint8_t receive_buffer[RX_BUFFER_LEN];
+char msg[80];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_DMA_Init(void);
 static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -149,9 +63,120 @@ static void MX_UART5_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void debug_write(char *data, size_t count){
-  HAL_StatusTypeDef status = HAL_UART_Transmit(&huart5, data, count, 10000);
+void debug_write(char *data){
+  HAL_UART_Transmit(&huart5, (uint8_t *) data , strlen(data), 10000);
 }
+
+void write_ati(){
+  HAL_StatusTypeDef status = HAL_UART_Transmit(&huart1, (uint8_t *) "ATI\r", 4 , 100);
+  if(status != HAL_OK){
+    debug_write("Err Tx\r\n");
+  }
+}
+
+void check_overflow_flag(){
+  if(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_ORE)){
+      debug_write("Overrun\r\n");
+      __HAL_UART_CLEAR_OREFLAG(&huart1);
+  }
+  else{
+    debug_write("No overrun\r\n");
+  }
+}
+
+void receive_write_directly(){
+  int rx = 0;
+  char msg[80];
+  HAL_StatusTypeDef status;
+  while(1){
+    status = HAL_UART_Receive(&huart1, receive_buffer, 1, 100);
+    if(status == HAL_OK){
+      rx++;
+      HAL_UART_Transmit(&huart5, receive_buffer, 1, 100);
+    }
+    else if(status == HAL_TIMEOUT){
+      sprintf(msg, "RX: %d\r\n", rx);
+      debug_write("Timeout\r\n");
+      return;
+    }
+    else{
+      debug_write("Err Rx\r\n");
+      return;
+    }
+  }
+}
+
+void receive_store_first(){
+  int rx = 0;
+  char msg[80];
+  uint8_t recv[100];
+  HAL_StatusTypeDef status;
+  while(1){
+    status = HAL_UART_Receive(&huart1, receive_buffer, 1, 100);
+    if(status == HAL_OK){
+      recv[rx] = receive_buffer[0];
+      rx++;
+    }
+    else if(status == HAL_TIMEOUT){
+      sprintf(msg, "RX: %d\r\n", rx);
+      debug_write(msg);
+      debug_write("Timeout\r\n");
+      HAL_UART_Transmit(&huart5, recv, rx, 100);
+      return;
+    }
+    else{
+      debug_write("Err Rx\r\n");
+      return;
+    }
+  }
+}
+
+uint8_t get_bytes_received(){
+  return RX_BUFFER_LEN - huart1.hdmarx->Instance->CNDTR;
+}
+
+void receive_dma(){
+  HAL_StatusTypeDef status;
+  status = HAL_UART_Receive_DMA(&huart1, receive_buffer, RX_BUFFER_LEN);
+  if(status != HAL_OK){
+    debug_write("DMA Err\r\n");
+  }
+  while(1){
+    sprintf(msg, "DMA Rx count: %d\r\n", get_bytes_received());
+    debug_write(msg);
+
+    if(get_bytes_received() == 56){
+      HAL_UART_Transmit(&huart5, receive_buffer, 56, 100);
+      return;
+    }
+  }
+}
+
+
+static bool system_bg_module_is_powered_on(void){
+    return HAL_GPIO_ReadPin(BG95_STATUS_GPIO_Port, BG95_STATUS_Pin) != 0;
+}
+
+void bg_reset(){
+  HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_RESET);
+  HAL_Delay(300);
+  HAL_GPIO_WritePin(BG95_RESET_N_GPIO_Port, BG95_RESET_N_Pin, GPIO_PIN_SET);
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  uint32_t errorCode = huart->ErrorCode;
+  sprintf(msg, "Err CB: %lu\r\n", errorCode);
+  check_overflow_flag();
+  debug_write(msg);
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
+  debug_write("Rx\r\n");
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -182,47 +207,23 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 
-  uint16_t receive_buffer_length = 1024;
-  uint8_t receive_buffer[receive_buffer_length];
-
-  char* bg95_uart_echo_cmd = "ATE1\r\0";
-  char* bg95_imei_cmd = "AT+QGMR\r\0";
-  uint8_t* test_arr = {0xaa, 0xaa, 0xaa, 0xaa};
-
-//  if (system_bg_module_is_powered_on)
-//  {
-//	  while (!system_bg_module_power_off());
-//  }
-  //system_bg_module_power_on();
+  debug_write("Reset\r\n");
   bg_reset();
-  //HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
-  //HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
-  //HAL_Delay(1000);
-  while(HAL_GPIO_ReadPin(BG95_STATUS_GPIO_Port, BG95_STATUS_Pin) == 0){
+  while(!system_bg_module_is_powered_on()){
     HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
   }
 
-  debug_write("Start\r\n", 7);
-  /*while(1){
-    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(DEBUG_OUT_GPIO_Port, DEBUG_OUT_Pin, GPIO_PIN_RESET);
-  }*/
-  //HAL_Delay(1000);
-
-
-  HAL_StatusTypeDef status = HAL_OK;
-  uint16_t bytes_read = 0;
-  uint16_t cmd_length = 0;
-
+  debug_write("Start\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	memset(receive_buffer, '\0', receive_buffer_length);
+	memset(receive_buffer, '\0', RX_BUFFER_LEN);
   //status = HAL_UART_Receive_IT(&huart1, receive_buffer, receive_buffer_length);
   //status = HAL_UART_Transmit(&huart1, bg95_uart_echo_cmd, strlen(bg95_uart_echo_cmd), 1000);
   while (1)
@@ -230,62 +231,24 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
     HAL_Delay(1000);
 
-    status = HAL_UART_Transmit(&huart1, "ATI\r", 4 , 100);
-    if(status != HAL_OK){
-      debug_write("Err Tx\r\n", 8);
-    }
-    int rx = 0;
-    char msg[80];
-    char recv[100];
-    while(1){
-      status = HAL_UART_Receive(&huart1, receive_buffer, 1, 100);
-      if(status == HAL_OK){
-        recv[rx] = receive_buffer[0];
-        rx++;
-      }
-      else if(status == HAL_TIMEOUT){
-        sprintf(msg, "RX: %d\r\n", rx);
-        debug_write(msg, strlen(msg));
-        debug_write("Timeout\r\n", 9);
-        debug_write(recv, rx);
-        break;
-      }
-      else{
-        debug_write("Err Rx\r\n", 8);
-        break;
-      }
-    }
-    status = HAL_UART_Transmit(&huart1, "ATI\r", 4 , 100);
-    if(status != HAL_OK){
-      debug_write("Err Tx\r\n", 8);
-    }
-    rx = 0;
-    while(1){
-      status = HAL_UART_Receive(&huart1, receive_buffer, 1, 100);
-      if(status == HAL_OK){
-        rx++;
-        debug_write(receive_buffer, 1);
-      }
-      else if(status == HAL_TIMEOUT){
-        sprintf(msg, "RX: %d\r\n", rx);
-        debug_write("Timeout\r\n", 9);
-        break;
-      }
-      else{
-        debug_write("Err Rx\r\n", 8);
-        break;
-      }
-    }
-    if(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_ORE)){
-        debug_write("Overrun\r\n", 9);
-        __HAL_UART_CLEAR_OREFLAG(&huart1);
-    }
-    else{
-      debug_write("No overrun\r\n", 12);
-    }
+    debug_write("==Start write_direct==\r\n");
+    write_ati();
+    receive_write_directly();
+    check_overflow_flag();
+
+    debug_write("==Start write_store==\r\n");
+    write_ati();
+    receive_store_first();
+    check_overflow_flag();
+
+    debug_write("==Start write_dma==\r\n");
+    write_ati();
+    receive_dma();
+    check_overflow_flag();
+
+    while(1);
   }
   /* USER CODE END 3 */
 }
@@ -405,6 +368,22 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
 
 }
 
